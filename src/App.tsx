@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Analytics } from '@vercel/analytics/react';
 import { cn } from '@/src/lib/utils';
 import { ClassData, WidgetLayout, Todo } from '@/src/types';
 import { useWidgetSize } from '@/src/components/Widget';
@@ -977,6 +978,7 @@ function AgendaWidget({
           </button>
         </div>
       </div>
+      <Analytics />
     </div>
   );
 }
