@@ -179,7 +179,7 @@ const Timer: React.FC = () => {
         <button 
           onClick={toggle}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg font-bold text-sm transition-all",
+            "flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-bold text-sm transition-all",
             isRunning ? "bg-amber-500/20 text-amber-500 border border-amber-500/30" : "bg-[var(--accent)] text-white"
           )}
         >
@@ -196,7 +196,7 @@ const Timer: React.FC = () => {
           <button 
             key={m} 
             onClick={() => setPreset(m)}
-            className="text-[10px] px-2 py-1 bg-[var(--surface2)] border border-[var(--border)] rounded-full text-[var(--muted)] hover:text-white hover:border-white/30 transition-all font-medium"
+            className="text-[10px] px-4 py-2 bg-[var(--surface2)] border border-[var(--border)] rounded-full text-[var(--muted)] hover:text-white hover:border-white/30 transition-all font-bold"
           >
             {m}m
           </button>
@@ -207,8 +207,8 @@ const Timer: React.FC = () => {
         <button
           onClick={() => { setMode('down'); reset(); }}
           className={cn(
-            "text-[10px] px-3 py-1 rounded-full border border-[var(--border)] font-medium transition-all text-[var(--muted)]",
-            mode === 'down' && "bg-[var(--accent)] border-[var(--accent)] text-white"
+            "text-[10px] px-4 py-2 rounded-full border border-[var(--border)] font-bold transition-all text-[var(--muted)]",
+            mode === 'down' && "bg-[var(--accent)] border-[var(--accent)] text-white shadow-lg"
           )}
         >
           Countdown
@@ -216,8 +216,8 @@ const Timer: React.FC = () => {
         <button
           onClick={() => { setMode('up'); reset(); }}
           className={cn(
-            "text-[10px] px-3 py-1 rounded-full border border-[var(--border)] font-medium transition-all text-[var(--muted)]",
-            mode === 'up' && "bg-[var(--accent)] border-[var(--accent)] text-white"
+            "text-[10px] px-4 py-2 rounded-full border border-[var(--border)] font-bold transition-all text-[var(--muted)]",
+            mode === 'up' && "bg-[var(--accent)] border-[var(--accent)] text-white shadow-lg"
           )}
         >
           Count-up

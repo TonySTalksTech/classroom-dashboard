@@ -114,18 +114,31 @@ const AnalogClock: React.FC<{ time: Date; size: number }> = ({ time, size: reque
     ctx.lineWidth = size * 0.015;
     ctx.stroke();
 
-    // Ticks
-    for (let i = 0; i < 12; i++) {
+    // Ticks & Numbers
+    for (let i = 1; i <= 12; i++) {
       const angle = (i * Math.PI) / 6;
       const isBig = i % 3 === 0;
       const r1 = r - (isBig ? size * 0.08 : size * 0.05);
       const r2 = r - 2;
+      
+      // Draw tick
       ctx.beginPath();
       ctx.moveTo(cx + Math.sin(angle) * r1, cy - Math.cos(angle) * r1);
       ctx.lineTo(cx + Math.sin(angle) * r2, cy - Math.cos(angle) * r2);
       ctx.strokeStyle = isBig ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)';
       ctx.lineWidth = isBig ? size * 0.015 : size * 0.008;
       ctx.stroke();
+
+      // Draw number
+      const numRadius = r - (size * 0.2);
+      const nx = cx + Math.sin(angle) * numRadius;
+      const ny = cy - Math.cos(angle) * numRadius;
+      
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.font = `bold ${Math.max(10, size * 0.08)}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(i.toString(), nx, ny);
     }
 
     const h = time.getHours() % 12;

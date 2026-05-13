@@ -5,7 +5,7 @@
 
 import React, { useRef, useState, useEffect, createContext, useContext } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { GripVertical, X } from 'lucide-react';
+import { GripVertical, X, Maximize2 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 
 interface WidgetContextType {
@@ -23,6 +23,8 @@ interface WidgetProps {
   children: React.ReactNode;
   defaultPosition?: { x: number; y: number };
   defaultSize?: { w: number; h: number };
+  homePosition?: { x: number; y: number };
+  homeSize?: { w: number; h: number };
   onClose?: () => void;
   onLayoutChange?: (id: string, layout: { x: number; y: number, w: number, h: number }) => void;
   onFocus?: () => void;
@@ -38,6 +40,8 @@ const Widget: React.FC<WidgetProps> = ({
   children,
   defaultPosition = { x: 20, y: 20 },
   defaultSize = { w: 300, h: 200 },
+  homePosition,
+  homeSize,
   onClose,
   onLayoutChange,
   onFocus,
@@ -49,13 +53,23 @@ const Widget: React.FC<WidgetProps> = ({
   const [size, setSize] = useState(defaultSize);
   const [pos, setPos] = useState(defaultPosition);
 
-  // Sync state with props when they change
+  // Sync state with props when they change externally (e.g. from a layout reset)
   useEffect(() => {
-    setSize(defaultSize);
+    setSize(prev => {
+      if (prev.w !== defaultSize.w || prev.h !== defaultSize.h) {
+        return defaultSize;
+      }
+      return prev;
+    });
   }, [defaultSize.w, defaultSize.h]);
 
   useEffect(() => {
-    setPos(defaultPosition);
+    setPos(prev => {
+      if (prev.x !== defaultPosition.x || prev.y !== defaultPosition.y) {
+        return defaultPosition;
+      }
+      return prev;
+    });
   }, [defaultPosition.x, defaultPosition.y]);
 
   const dragControls = useDragControls();
@@ -75,8 +89,8 @@ const Widget: React.FC<WidgetProps> = ({
     let currentH = startH;
 
     const onPointerMove = (moveEvent: PointerEvent) => {
-      currentW = Math.max(180, startW + (moveEvent.clientX - startX));
-      currentH = Math.max(100, startH + (moveEvent.clientY - startY));
+      currentW = Math.max(220, startW + (moveEvent.clientX - startX));
+      currentH = Math.max(160, startH + (moveEvent.clientY - startY));
       setSize({ w: currentW, h: currentH });
     };
 
@@ -99,7 +113,6 @@ const Widget: React.FC<WidgetProps> = ({
       dragControls={dragControls}
       dragListener={false}
       dragMomentum={false}
-      initial={false}
       onMouseDown={onFocus}
       onDragStart={onFocus}
       onDragEnd={(_, info) => {
@@ -121,11 +134,9 @@ const Widget: React.FC<WidgetProps> = ({
           onLayoutChange?.(id, { ...newPos, w: size.w, h: size.h });
         }
       }}
-      animate={{ x: pos.x, y: pos.y }}
-      transition={{ type: "just" }}
+      animate={{ x: pos.x, y: pos.y, width: size.w, height: size.h }}
+      transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
       style={{ 
-        width: size.w, 
-        height: size.h, 
         zIndex: isTop ? 40 : 10,
         position: 'absolute',
         left: 0,
@@ -145,6 +156,18 @@ const Widget: React.FC<WidgetProps> = ({
         <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] flex-1">
           {title}
         </span>
+        <button 
+          onClick={() => {
+            onFocus?.();
+            const hPos = homePosition || defaultPosition;
+            const hSize = homeSize || defaultSize;
+            onLayoutChange?.(id, { x: hPos.x, y: hPos.y, w: hSize.w, h: hSize.h });
+          }}
+          className="p-1 rounded-md text-[var(--muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 opacity-0 group-hover:opacity-100 transition-all mr-1"
+          title="Maximize / Restore to original location"
+        >
+          <Maximize2 size={14} />
+        </button>
         {onClose && (
           <button 
             onClick={onClose}

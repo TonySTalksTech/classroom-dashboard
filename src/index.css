@@ -7,14 +7,16 @@
 }
 
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface2: #22263a;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #f0f0f5;
-  --muted: #8b8fa8;
-  --accent: #6c63ff;
-  --accent2: #00d4aa;
+  --bg: #0a0b10;
+  --surface: #12141c;
+  --surface2: #1a1d2e;
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --muted: #9499b8;
+  --accent: #8b5cf6;
+  --accent-rgb: 139, 92, 246;
+  --accent2: #00f2ff;
+  --accent2-rgb: 0, 242, 255;
 }
 
 body {
