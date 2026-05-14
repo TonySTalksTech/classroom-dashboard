@@ -865,17 +865,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const stampText = (text: string) => {
     const cv = canvasRef.current;
     if (!cv) return;
-    snapshot();
-    const ctx = cv.getContext('2d');
-    if (!ctx) return;
     const { w, h } = getCanvasDims(cv);
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = "500 48px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, w / 2, h / 2);
-    ctx.restore();
+    
+    const newElement: WhiteboardElement = {
+      id: Math.random().toString(36).substring(7),
+      type: 'text',
+      tool: 'text',
+      x: w / 2,
+      y: h / 2,
+      color: color,
+      strokeWidth: WB_SIZES[size],
+      opacity: 1,
+      text: text
+    };
+    setElements(prev => [...prev, newElement]);
+    setTool('select');
+    setSelectedElementId(newElement.id);
   };
 
   return (
@@ -1263,18 +1268,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             if (el.type === 'path' && el.points) {
               const d = `M ${el.points.map(p => `${p.x + el.x},${p.y + el.y}`).join(' L ')}`;
               return (
-                <motion.path
-                  key={el.id}
-                  {...dragProps}
-                  d={d}
-                  fill="none"
-                  stroke={el.color}
-                  strokeWidth={el.strokeWidth + (isSelectable ? 10 : 0)} // Invisible wider buffer for easy clicking
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={el.opacity}
-                  className="transition-colors"
-                />
+                <motion.g key={el.id} {...dragProps}>
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={el.color}
+                    strokeWidth={el.strokeWidth + (isSelectable ? 14 : 0)} // Wider buffer for selection
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeOpacity={el.opacity}
+                  />
+                  {isSelected && (
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      className="pointer-events-none"
+                    />
+                  )}
+                </motion.g>
               );
             }
             
@@ -1283,16 +1297,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               const y0 = el.y;
               const x1 = el.x + (el.width || 0);
               const y1 = el.y + (el.height || 0);
-              // Handle negative width/height if stored that way
               return (
                 <motion.g key={el.id} {...dragProps}>
                   <line 
                     x1={x0} y1={y0} x2={x1} y2={y1} 
                     stroke={el.color} 
-                    strokeWidth={el.strokeWidth + (isSelectable ? 10 : 0)} 
+                    strokeWidth={el.strokeWidth + (isSelectable ? 14 : 0)} 
                     strokeLinecap="round" 
                     strokeOpacity={el.opacity}
                   />
+                  {isSelected && (
+                    <line 
+                      x1={x0} y1={y0} x2={x1} y2={y1} 
+                      stroke="var(--accent)" 
+                      strokeWidth={1} 
+                      strokeDasharray="4 4"
+                      className="pointer-events-none"
+                    />
+                  )}
                   {el.tool === 'arrow' && (() => {
                     const angle = Math.atan2(y1 - y0, x1 - x0);
                     const headLen = 15;
@@ -1310,54 +1332,100 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
             if (el.type === 'rect') {
               return (
-                <motion.rect
-                  key={el.id}
-                  {...dragProps}
-                  x={el.x}
-                  y={el.y}
-                  width={el.width}
-                  height={el.height}
-                  fill="none"
-                  stroke={el.color}
-                  strokeWidth={el.strokeWidth + (isSelectable ? 10 : 0)}
-                  strokeOpacity={el.opacity}
-                />
+                <motion.g key={el.id} {...dragProps}>
+                  <rect
+                    x={el.x}
+                    y={el.y}
+                    width={el.width}
+                    height={el.height}
+                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                    stroke={el.color}
+                    strokeWidth={el.strokeWidth}
+                    strokeOpacity={el.opacity}
+                  />
+                  {isSelected && (
+                    <rect 
+                      x={el.x - 4} y={el.y - 4} width={(el.width || 0) + 8} height={(el.height || 0) + 8}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      className="pointer-events-none"
+                    />
+                  )}
+                </motion.g>
               );
             }
 
             if (el.type === 'ellipse') {
+              const rx = (el.width || 0) / 2;
+              const ry = (el.height || 0) / 2;
+              const cx = el.x + rx;
+              const cy = el.y + ry;
               return (
-                <motion.ellipse
-                  key={el.id}
-                  {...dragProps}
-                  cx={el.x + (el.width || 0) / 2}
-                  cy={el.y + (el.height || 0) / 2}
-                  rx={(el.width || 0) / 2}
-                  ry={(el.height || 0) / 2}
-                  fill="none"
-                  stroke={el.color}
-                  strokeWidth={el.strokeWidth + (isSelectable ? 10 : 0)}
-                  strokeOpacity={el.opacity}
-                />
+                <motion.g key={el.id} {...dragProps}>
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={rx}
+                    ry={ry}
+                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                    stroke={el.color}
+                    strokeWidth={el.strokeWidth}
+                    strokeOpacity={el.opacity}
+                  />
+                  {isSelected && (
+                    <ellipse 
+                      cx={cx} cy={cy} rx={rx + 4} ry={ry + 4}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      className="pointer-events-none"
+                    />
+                  )}
+                </motion.g>
               );
             }
 
             if (el.type === 'text') {
               if (editingText?.id === el.id) return null;
+              const fontSize = el.strokeWidth * 3 + 12;
               return (
-                <motion.text
-                  key={el.id}
-                  {...dragProps}
-                  x={el.x}
-                  y={el.y}
-                  fill={el.color}
-                  fontSize={el.strokeWidth * 3 + 12}
-                  fontWeight="500"
-                  fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-                  dominantBaseline="hanging"
-                >
-                  {el.text}
-                </motion.text>
+                <motion.g key={el.id} {...dragProps}>
+                  {/* Invisible background to make text easier to select */}
+                  <rect
+                    x={el.x - 4}
+                    y={el.y - 4}
+                    width={(el.text?.length || 0) * (fontSize * 0.6) + 8}
+                    height={fontSize + 8}
+                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                  />
+                  <text
+                    x={el.x}
+                    y={el.y}
+                    fill={el.color}
+                    fontSize={fontSize}
+                    fontWeight="500"
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                    dominantBaseline="hanging"
+                    pointerEvents="none"
+                  >
+                    {el.text}
+                  </text>
+                  {isSelected && (
+                    <rect 
+                      x={el.x-6} y={el.y-6} 
+                      width={(el.text?.length || 0) * (fontSize * 0.6) + 12} 
+                      height={fontSize + 12}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      className="pointer-events-none"
+                    />
+                  )}
+                </motion.g>
               );
             }
 
