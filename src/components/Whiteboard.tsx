@@ -211,7 +211,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const [activePoints, setActivePoints] = useState<{ x: number, y: number }[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const dragStartRef = useRef<{ x: number, y: number, id: string } | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [editingText, setEditingText] = useState<{ id?: string, x: number, y: number, value: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -259,6 +259,37 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       img.src = src;
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDragElement = (_: any, info: { offset: { x: number, y: number } }) => {
+    if (tool !== 'select' || isResizing || !dragStartRef.current) return;
+    const { x: sx, y: sy, id } = dragStartRef.current;
+    
+    const nextX = sx + info.offset.x;
+    const nextY = sy + info.offset.y;
+    
+    setElements(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, x: nextX, y: nextY };
+      }
+      return item;
+    }));
+  };
+
+  const handleResizeImage = (id: string, info: { offset: { x: number, y: number } }) => {
+    if (tool !== 'select' || !resizeStartRef.current) return;
+    const { width: sw, ratio } = resizeStartRef.current;
+    
+    const deltaX = info.offset.x;
+    const newWidth = Math.max(40, sw + deltaX);
+    const newHeight = newWidth / ratio;
+    
+    setElements(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, width: newWidth, height: newHeight };
+      }
+      return item;
+    }));
   };
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
@@ -659,6 +690,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           text: editingText.value
         };
         setElements(prev => [...prev, newElement]);
+        setTool('select');
+        setSelectedElementId(newElement.id);
       }
     } else if (editingText.id) {
       setElements(prev => prev.filter(el => el.id !== editingText.id));
@@ -677,15 +710,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     // Stop propagation to avoid triggering widget dragging or other parent handlers
     e.stopPropagation();
     
-    // Capture on the element that has the handlers (the container)
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    const { x, y } = getPos(e, cv);
-    
     if (tool === 'select') {
       setSelectedElementId(null);
       return;
     }
 
+    // Capture on the element that has the handlers (the container)
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    const { x, y } = getPos(e, cv);
+    
     setIsDrawing(true);
     setStartPos({ x, y });
     setActivePoints([{ x, y }]);
@@ -750,6 +783,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
     setElements(prev => [...prev, newElement]);
     setActivePoints([]);
+
+    // Auto-select shapes and arrows after drawing to make them immediately movable
+    if (['rect', 'ellipse', 'line', 'arrow'].includes(tool)) {
+      setTool('select');
+      setSelectedElementId(newElement.id);
+    }
   };
 
   const clear = () => {
@@ -1129,7 +1168,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           id="svg-drawing-overlay"
           width="100%"
           height="100%"
-          className="absolute inset-0 z-30 pointer-events-none overflow-hidden w-full h-full"
+          className="absolute inset-0 z-30 pointer-events-none overflow-hidden w-full h-full touch-none"
         >
           {/* Deselect Overlay - only clickable in select mode */}
           {tool === 'select' && (
@@ -1196,40 +1235,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           {elements.map((el) => {
             const isSelected = selectedElementId === el.id;
             
-            const handleDragElement = (_: any, info: { offset: { x: number, y: number } }) => {
-              if (tool !== 'select' || isResizing || !dragStartRef.current) return;
-              const start = dragStartRef.current;
-              const nextX = start.x + info.offset.x;
-              const nextY = start.y + info.offset.y;
-              
-              setElements(prev => prev.map(item => {
-                if (item.id === el.id) {
-                  return { ...item, x: nextX, y: nextY };
-                }
-                return item;
-              }));
-            };
-
-            const handleResizeImage = (_: any, info: { offset: { x: number, y: number } }) => {
-              if (tool !== 'select' || !resizeStartRef.current) return;
-              const { width: sw, height: sh, ratio } = resizeStartRef.current;
-              
-              // Use diagonal movement for more natural resizing
-              const deltaX = info.offset.x;
-              const deltaY = info.offset.y;
-              
-              // We'll base the scale on the axis that changed more or just X
-              const newWidth = Math.max(40, sw + deltaX);
-              const newHeight = newWidth / ratio;
-              
-              setElements(prev => prev.map(item => {
-                if (item.id === el.id) {
-                  return { ...item, width: newWidth, height: newHeight };
-                }
-                return item;
-              }));
-            };
-
             const elementProps = {
               onPointerDown: (e: React.PointerEvent) => {
                 if (tool === 'select') {
@@ -1247,7 +1252,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             const interactiveStyle = {
               pointerEvents: isSelectable ? 'auto' : 'none' as any,
               cursor: isSelectable ? (isSelected ? 'grabbing' : 'grab') : 'none',
-              filter: isSelected ? 'drop-shadow(0 0 4px var(--accent))' : 'none'
+              filter: isSelected ? 'drop-shadow(0 0 4px var(--accent))' : 'none',
+              touchAction: 'none'
             };
 
             const dragProps = {
@@ -1255,25 +1261,62 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               onPanStart: () => {
                 if (isSelectable) {
                   setSelectedElementId(el.id);
-                  dragStartRef.current = { x: el.x, y: el.y };
+                  dragStartRef.current = { x: el.x, y: el.y, id: el.id };
                 }
               },
               onPanEnd: () => {
                 dragStartRef.current = null;
               },
+              onTap: () => {
+                if (isSelectable) {
+                  setSelectedElementId(el.id);
+                }
+              },
               ...elementProps,
-              style: interactiveStyle
+              style: interactiveStyle,
+              className: isSelectable ? "pointer-events-auto" : ""
             };
 
             if (el.type === 'path' && el.points) {
               const d = `M ${el.points.map(p => `${p.x + el.x},${p.y + el.y}`).join(' L ')}`;
+              
+              // Calculate bounding box for selection
+              const xPoints = el.points.map(p => p.x + el.x);
+              const yPoints = el.points.map(p => p.y + el.y);
+              const minX = Math.min(...xPoints);
+              const maxX = Math.max(...xPoints);
+              const minY = Math.min(...yPoints);
+              const maxY = Math.max(...yPoints);
+
               return (
                 <motion.g key={el.id} {...dragProps}>
+                  {/* Robust hit area: both a thick stroke and a bounding box rect */}
+                  {isSelectable && (
+                    <>
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="rgba(255,255,255,0.01)"
+                        strokeWidth={Math.max(40, el.strokeWidth + 20)}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="cursor-move"
+                      />
+                      <rect 
+                        x={minX - 20} 
+                        y={minY - 20} 
+                        width={maxX - minX + 40} 
+                        height={maxY - minY + 40} 
+                        fill="rgba(255,255,255,0.01)"
+                        className="cursor-move"
+                      />
+                    </>
+                  )}
                   <path
                     d={d}
                     fill="none"
                     stroke={el.color}
-                    strokeWidth={el.strokeWidth + (isSelectable ? 14 : 0)} // Wider buffer for selection
+                    strokeWidth={el.strokeWidth} 
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeOpacity={el.opacity}
@@ -1283,7 +1326,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                       d={d}
                       fill="none"
                       stroke="var(--accent)"
-                      strokeWidth={1.5}
+                      strokeWidth={2}
                       strokeDasharray="4 4"
                       className="pointer-events-none"
                     />
@@ -1299,10 +1342,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               const y1 = el.y + (el.height || 0);
               return (
                 <motion.g key={el.id} {...dragProps}>
+                  {/* Wider hit area for lines */}
+                  {isSelectable && (
+                    <line 
+                      x1={x0} y1={y0} x2={x1} y2={y1} 
+                      stroke="rgba(255,255,255,0.01)" 
+                      strokeWidth={Math.max(30, el.strokeWidth + 20)} 
+                      strokeLinecap="round" 
+                      className="cursor-move"
+                    />
+                  )}
                   <line 
                     x1={x0} y1={y0} x2={x1} y2={y1} 
                     stroke={el.color} 
-                    strokeWidth={el.strokeWidth + (isSelectable ? 14 : 0)} 
+                    strokeWidth={el.strokeWidth} 
                     strokeLinecap="round" 
                     strokeOpacity={el.opacity}
                   />
@@ -1317,13 +1370,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                   )}
                   {el.tool === 'arrow' && (() => {
                     const angle = Math.atan2(y1 - y0, x1 - x0);
-                    const headLen = 15;
+                    // Scale arrow head with stroke width slightly
+                    const headLen = Math.max(15, 10 + el.strokeWidth);
+                    const d = `M ${x1} ${y1} L ${x1 - headLen * Math.cos(angle - 0.4)} ${y1 - headLen * Math.sin(angle - 0.4)} L ${x1 - headLen * Math.cos(angle + 0.4)} ${y1 - headLen * Math.sin(angle + 0.4)} Z`;
                     return (
-                      <path 
-                        d={`M ${x1} ${y1} L ${x1 - headLen * Math.cos(angle - 0.4)} ${y1 - headLen * Math.sin(angle - 0.4)} L ${x1 - headLen * Math.cos(angle + 0.4)} ${y1 - headLen * Math.sin(angle + 0.4)} Z`}
-                        fill={el.color}
-                        style={{ opacity: el.opacity }}
-                      />
+                      <>
+                        {isSelectable && (
+                          <path 
+                            d={d}
+                            fill="rgba(255,255,255,0.01)"
+                            stroke="rgba(255,255,255,0.01)"
+                            strokeWidth={headLen}
+                            className="cursor-move"
+                          />
+                        )}
+                        <path 
+                          d={d}
+                          fill={el.color}
+                          style={{ opacity: el.opacity }}
+                        />
+                      </>
                     );
                   })()}
                 </motion.g>
@@ -1331,21 +1397,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             }
 
             if (el.type === 'rect') {
+              const rectWidth = el.width || 0;
+              const rectHeight = el.height || 0;
               return (
                 <motion.g key={el.id} {...dragProps}>
+                  {/* Dedicated larger hit area for rectangles */}
+                  {isSelectable && (
+                    <rect
+                      x={el.x - 10}
+                      y={el.y - 10}
+                      width={rectWidth + 20}
+                      height={rectHeight + 20}
+                      fill="rgba(255,255,255,0.01)"
+                      className="cursor-move"
+                    />
+                  )}
                   <rect
                     x={el.x}
                     y={el.y}
-                    width={el.width}
-                    height={el.height}
-                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                    width={rectWidth}
+                    height={rectHeight}
+                    fill={isSelectable ? (isSelected ? "rgba(var(--accent-rgb),0.1)" : "rgba(255,255,255,0.05)") : "none"}
                     stroke={el.color}
                     strokeWidth={el.strokeWidth}
                     strokeOpacity={el.opacity}
                   />
                   {isSelected && (
                     <rect 
-                      x={el.x - 4} y={el.y - 4} width={(el.width || 0) + 8} height={(el.height || 0) + 8}
+                      x={el.x - 4} y={el.y - 4} width={rectWidth + 8} height={rectHeight + 8}
                       fill="none"
                       stroke="var(--accent)"
                       strokeWidth={1.5}
@@ -1358,25 +1437,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             }
 
             if (el.type === 'ellipse') {
-              const rx = (el.width || 0) / 2;
-              const ry = (el.height || 0) / 2;
+              const rx = Math.abs(el.width || 0) / 2;
+              const ry = Math.abs(el.height || 0) / 2;
               const cx = el.x + rx;
               const cy = el.y + ry;
               return (
                 <motion.g key={el.id} {...dragProps}>
+                  {/* Dedicated larger hit area for ellipses */}
+                  {isSelectable && (
+                    <ellipse
+                      cx={cx}
+                      cy={cy}
+                      rx={rx + 15}
+                      ry={ry + 15}
+                      fill="rgba(255,255,255,0.01)"
+                      className="cursor-move"
+                    />
+                  )}
                   <ellipse
                     cx={cx}
                     cy={cy}
                     rx={rx}
                     ry={ry}
-                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                    fill={isSelectable ? (isSelected ? "rgba(var(--accent-rgb),0.15)" : "rgba(255,255,255,0.05)") : "none"}
                     stroke={el.color}
                     strokeWidth={el.strokeWidth}
                     strokeOpacity={el.opacity}
                   />
                   {isSelected && (
                     <ellipse 
-                      cx={cx} cy={cy} rx={rx + 4} ry={ry + 4}
+                      cx={cx} cy={cy} rx={rx + 6} ry={ry + 6}
                       fill="none"
                       stroke="var(--accent)"
                       strokeWidth={1.5}
@@ -1391,15 +1481,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             if (el.type === 'text') {
               if (editingText?.id === el.id) return null;
               const fontSize = el.strokeWidth * 3 + 12;
+              const textWidth = (el.text?.length || 0) * (fontSize * 0.6) + 12;
+              const textHeight = fontSize + 12;
+
               return (
                 <motion.g key={el.id} {...dragProps}>
-                  {/* Invisible background to make text easier to select */}
+                  {/* Invisible background to make text much easier to select */}
                   <rect
-                    x={el.x - 4}
-                    y={el.y - 4}
-                    width={(el.text?.length || 0) * (fontSize * 0.6) + 8}
-                    height={fontSize + 8}
-                    fill={isSelectable ? "rgba(255,255,255,0.05)" : "none"}
+                    x={el.x - 6}
+                    y={el.y - 6}
+                    width={textWidth}
+                    height={textHeight}
+                    fill={isSelectable ? (isSelected ? "rgba(var(--accent-rgb),0.1)" : "rgba(255,255,255,0.05)") : "none"}
+                    rx={4}
+                    className="cursor-move"
                   />
                   <text
                     x={el.x}
@@ -1415,14 +1510,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                   </text>
                   {isSelected && (
                     <rect 
-                      x={el.x-6} y={el.y-6} 
-                      width={(el.text?.length || 0) * (fontSize * 0.6) + 12} 
-                      height={fontSize + 12}
+                      x={el.x - 8} y={el.y - 8} 
+                      width={textWidth + 4} 
+                      height={textHeight + 4}
                       fill="none"
                       stroke="var(--accent)"
                       strokeWidth={1.5}
                       strokeDasharray="4 4"
                       className="pointer-events-none"
+                      rx={4}
                     />
                   )}
                 </motion.g>
@@ -1441,7 +1537,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                     {/* Draggable background area to ensure interaction even on transparent image parts */}
                     <rect 
                       x={rectX} y={rectY} width={rectW} height={rectH} 
-                      fill="transparent" 
+                      fill="rgba(255,255,255,0.01)" 
                     />
                     <motion.image
                       x={rectX}
@@ -1488,7 +1584,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                           ratio: currentW / (currentH || 1) 
                         };
                       }}
-                      onPan={handleResizeImage}
+                      onPan={(e: any, info: any) => handleResizeImage(el.id, info)}
                       onPanEnd={() => {
                         resizeStartRef.current = null;
                         setIsResizing(false);
