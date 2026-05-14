@@ -115,16 +115,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const functions = sharedState?.functions ?? internalFunctions;
 
   const setTool = (v: string) => {
+    if (v === tool) return;
     setInternalTool(v);
-    if (onSharedStateChange) onSharedStateChange({ tool: v });
     if (v !== 'select') {
       setSelectedElementId(null);
     }
   };
 
   const setColor = (v: string) => {
+    if (v === color) return;
     setInternalColor(v);
-    if (onSharedStateChange) onSharedStateChange({ color: v });
     if (selectedElementId) {
       setElements(prev => prev.map(el => 
         el.id === selectedElementId ? { ...el, color: v } : el
@@ -133,8 +133,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   };
 
   const setSize = (v: WhiteboardSize) => {
+    if (v === size) return;
     setInternalSize(v);
-    if (onSharedStateChange) onSharedStateChange({ size: v });
     if (selectedElementId) {
       const sw = WB_SIZES[v] * (tool === 'highlighter' ? 4 : (tool === 'eraser' ? 3 : (tool === 'marker' ? 2.5 : 1)));
       setElements(prev => prev.map(el => 
@@ -144,78 +144,268 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   };
 
   const setBgDark = (v: boolean) => {
+    if (v === bgDark) return;
     setInternalBgDark(v);
-    if (onSharedStateChange) onSharedStateChange({ bgDark: v });
   };
 
   const setUndoStack = (valOrUpdater: string[] | ((prev: string[]) => string[])) => {
-    const next = typeof valOrUpdater === 'function' ? (valOrUpdater as any)(undoStack) : valOrUpdater;
-    setInternalUndoStack(next);
-    if (onSharedStateChange) onSharedStateChange({ undoStack: next });
+    setInternalUndoStack(prev => {
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
+      if (isSame(prev, next)) return prev;
+      return next;
+    });
   };
 
   const setRedoStack = (valOrUpdater: string[] | ((prev: string[]) => string[])) => {
-    const next = typeof valOrUpdater === 'function' ? (valOrUpdater as any)(redoStack) : valOrUpdater;
-    setInternalRedoStack(next);
-    if (onSharedStateChange) onSharedStateChange({ redoStack: next });
+    setInternalRedoStack(prev => {
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
+      if (isSame(prev, next)) return prev;
+      return next;
+    });
   };
 
   const setShowGrid = (v: boolean) => {
+    if (v === showGrid) return;
     setInternalShowGrid(v);
-    if (onSharedStateChange) onSharedStateChange({ showGrid: v });
   };
 
   const setGridScale = (v: number) => {
+    if (v === gridScale) return;
     setInternalGridScale(v);
-    if (onSharedStateChange) onSharedStateChange({ gridScale: v });
   };
 
   const setShowGridLabels = (v: boolean) => {
+    if (v === showGridLabels) return;
     setInternalShowGridLabels(v);
-    if (onSharedStateChange) onSharedStateChange({ showGridLabels: v });
   };
 
   const setShowEqPanel = (v: boolean) => {
+    if (v === showEqPanel) return;
     setInternalShowEqPanel(v);
-    if (onSharedStateChange) onSharedStateChange({ showEqPanel: v });
   };
 
   const setShowMathTools = (v: boolean) => {
+    if (v === showMathTools) return;
     setInternalShowMathTools(v);
-    if (onSharedStateChange) onSharedStateChange({ showMathTools: v });
   };
 
   const setActiveGeoTools = (valOrUpdater: string[] | ((prev: string[]) => string[])) => {
-    const next = typeof valOrUpdater === 'function' ? (valOrUpdater as any)(activeGeoTools) : valOrUpdater;
-    setInternalActiveGeoTools(next);
-    if (onSharedStateChange) onSharedStateChange({ activeGeoTools: next });
+    setInternalActiveGeoTools(prev => {
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
+      if (isSame(prev, next)) return prev;
+      return next;
+    });
   };
 
   const setShowGrapher = (v: boolean) => {
+    if (v === showGrapher) return;
     setInternalShowGrapher(v);
-    if (onSharedStateChange) onSharedStateChange({ showGrapher: v });
   };
 
   const setFunctions = (v: { expr: string, color: string }[]) => {
+    if (isSame(v, functions)) return;
     setInternalFunctions(v);
-    if (onSharedStateChange) onSharedStateChange({ functions: v });
   };
 
   const setElements = (valOrUpdater: WhiteboardElement[] | ((prev: WhiteboardElement[]) => WhiteboardElement[])) => {
-    const next = typeof valOrUpdater === 'function' ? (valOrUpdater as any)(elements) : valOrUpdater;
-    setInternalElements(next);
-    if (onSharedStateChange) onSharedStateChange({ elements: next });
+    setInternalElements(prev => {
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
+      if (isSame(prev, next)) return prev;
+      return next;
+    });
   };
+
+  // Consolidate state synchronization to prevent update loops
+  const onSharedStateChangeRef = useRef(onSharedStateChange);
+  useEffect(() => {
+    onSharedStateChangeRef.current = onSharedStateChange;
+  }, [onSharedStateChange]);
+
+  // Tracking refs to avoid sync loops
+  const lastIncomingStateRef = useRef<WhiteboardState | null>(null);
+  const lastOutgoingStateRef = useRef<Partial<WhiteboardState>>({});
+  const isIncomingUpdateInProgress = useRef(false);
+
+  // Helper for deep equality check (simple version for arrays/objects)
+  const isSame = (a: any, b: any) => {
+    if (a === b) return true;
+    if (typeof a !== typeof b) return false;
+    if (a && b && typeof a === 'object') {
+      return JSON.stringify(a) === JSON.stringify(b);
+    }
+    return a === b;
+  };
+
+  // Sync Shared -> Internal (Incoming)
+  useEffect(() => {
+    if (!sharedState) return;
+    
+    // Skip if this is exactly what we just broadcasted
+    // or what we already processed incoming
+    if (lastIncomingStateRef.current === sharedState) return;
+    lastIncomingStateRef.current = sharedState;
+
+    isIncomingUpdateInProgress.current = true;
+
+    // Check each field and update internal state only if it differs from what we currently have
+    if (sharedState.elements !== undefined && !isSame(sharedState.elements, internalElements)) {
+      setInternalElements(sharedState.elements);
+    }
+    if (sharedState.undoStack !== undefined && !isSame(sharedState.undoStack, internalUndoStack)) {
+      setInternalUndoStack(sharedState.undoStack);
+    }
+    if (sharedState.redoStack !== undefined && !isSame(sharedState.redoStack, internalRedoStack)) {
+      setInternalRedoStack(sharedState.redoStack);
+    }
+    if (sharedState.tool !== undefined && sharedState.tool !== internalTool) {
+      setInternalTool(sharedState.tool);
+    }
+    if (sharedState.color !== undefined && sharedState.color !== internalColor) {
+      setInternalColor(sharedState.color);
+    }
+    if (sharedState.size !== undefined && sharedState.size !== internalSize) {
+      setInternalSize(sharedState.size);
+    }
+    if (sharedState.bgDark !== undefined && sharedState.bgDark !== internalBgDark) {
+      setInternalBgDark(sharedState.bgDark);
+    }
+    if (sharedState.showGrid !== undefined && sharedState.showGrid !== internalShowGrid) {
+      setInternalShowGrid(sharedState.showGrid);
+    }
+    if (sharedState.gridScale !== undefined && sharedState.gridScale !== internalGridScale) {
+      setInternalGridScale(sharedState.gridScale);
+    }
+    if (sharedState.showGridLabels !== undefined && sharedState.showGridLabels !== internalShowGridLabels) {
+      setInternalShowGridLabels(sharedState.showGridLabels);
+    }
+    if (sharedState.showEqPanel !== undefined && sharedState.showEqPanel !== internalShowEqPanel) {
+      setInternalShowEqPanel(sharedState.showEqPanel);
+    }
+    if (sharedState.showMathTools !== undefined && sharedState.showMathTools !== internalShowMathTools) {
+      setInternalShowMathTools(sharedState.showMathTools);
+    }
+    if (sharedState.activeGeoTools !== undefined && !isSame(sharedState.activeGeoTools, internalActiveGeoTools)) {
+      setInternalActiveGeoTools(sharedState.activeGeoTools);
+    }
+    if (sharedState.showGrapher !== undefined && sharedState.showGrapher !== internalShowGrapher) {
+      setInternalShowGrapher(sharedState.showGrapher);
+    }
+    if (sharedState.functions !== undefined && !isSame(sharedState.functions, internalFunctions)) {
+      setInternalFunctions(sharedState.functions);
+    }
+
+    // Use a microtask/tick to ensure broadcast effect (which triggers on internal state sets)
+    // sees the isIncomingUpdateInProgress as true
+    setTimeout(() => {
+      isIncomingUpdateInProgress.current = false;
+    }, 0);
+  }, [sharedState]);
+
+  // Sync Internal -> Shared (Broadcast)
+  useEffect(() => {
+    if (isIncomingUpdateInProgress.current) return;
+
+    const updates: Partial<WhiteboardState> = {};
+    let hasChanges = false;
+
+    // We compare current internal values with what was in the sharedState last time
+    // OR what we last broadcasted.
+    const base = sharedState || {};
+
+    if (!isSame(internalElements, base.elements) && !isSame(internalElements, lastOutgoingStateRef.current.elements)) {
+      updates.elements = internalElements;
+      hasChanges = true;
+    }
+    if (!isSame(internalUndoStack, base.undoStack) && !isSame(internalUndoStack, lastOutgoingStateRef.current.undoStack)) {
+      updates.undoStack = internalUndoStack;
+      hasChanges = true;
+    }
+    if (!isSame(internalRedoStack, base.redoStack) && !isSame(internalRedoStack, lastOutgoingStateRef.current.redoStack)) {
+      updates.redoStack = internalRedoStack;
+      hasChanges = true;
+    }
+    if (internalTool !== base.tool && internalTool !== lastOutgoingStateRef.current.tool) {
+      updates.tool = internalTool;
+      hasChanges = true;
+    }
+    if (internalColor !== base.color && internalColor !== lastOutgoingStateRef.current.color) {
+      updates.color = internalColor;
+      hasChanges = true;
+    }
+    if (internalSize !== base.size && internalSize !== lastOutgoingStateRef.current.size) {
+      updates.size = internalSize;
+      hasChanges = true;
+    }
+    if (internalBgDark !== base.bgDark && internalBgDark !== lastOutgoingStateRef.current.bgDark) {
+      updates.bgDark = internalBgDark;
+      hasChanges = true;
+    }
+    if (internalShowGrid !== base.showGrid && internalShowGrid !== lastOutgoingStateRef.current.showGrid) {
+      updates.showGrid = internalShowGrid;
+      hasChanges = true;
+    }
+    if (internalGridScale !== base.gridScale && internalGridScale !== lastOutgoingStateRef.current.gridScale) {
+      updates.gridScale = internalGridScale;
+      hasChanges = true;
+    }
+    if (internalShowGridLabels !== base.showGridLabels && internalShowGridLabels !== lastOutgoingStateRef.current.showGridLabels) {
+      updates.showGridLabels = internalShowGridLabels;
+      hasChanges = true;
+    }
+    if (internalShowEqPanel !== base.showEqPanel && internalShowEqPanel !== lastOutgoingStateRef.current.showEqPanel) {
+      updates.showEqPanel = internalShowEqPanel;
+      hasChanges = true;
+    }
+    if (internalShowMathTools !== base.showMathTools && internalShowMathTools !== lastOutgoingStateRef.current.showMathTools) {
+      updates.showMathTools = internalShowMathTools;
+      hasChanges = true;
+    }
+    if (!isSame(internalActiveGeoTools, base.activeGeoTools) && !isSame(internalActiveGeoTools, lastOutgoingStateRef.current.activeGeoTools)) {
+      updates.activeGeoTools = internalActiveGeoTools;
+      hasChanges = true;
+    }
+    if (internalShowGrapher !== base.showGrapher && internalShowGrapher !== lastOutgoingStateRef.current.showGrapher) {
+      updates.showGrapher = internalShowGrapher;
+      hasChanges = true;
+    }
+    if (!isSame(internalFunctions, base.functions) && !isSame(internalFunctions, lastOutgoingStateRef.current.functions)) {
+      updates.functions = internalFunctions;
+      hasChanges = true;
+    }
+
+    if (hasChanges && onSharedStateChangeRef.current) {
+      lastOutgoingStateRef.current = { ...lastOutgoingStateRef.current, ...updates };
+      onSharedStateChangeRef.current(updates);
+    }
+  }, [
+    internalElements,
+    internalUndoStack,
+    internalRedoStack,
+    internalTool,
+    internalColor,
+    internalSize,
+    internalBgDark,
+    internalShowGrid,
+    internalGridScale,
+    internalShowGridLabels,
+    internalShowEqPanel,
+    internalShowMathTools,
+    internalActiveGeoTools,
+    internalShowGrapher,
+    internalFunctions,
+    sharedState // important to compare against what's current in parent
+  ]);
+
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [activePoints, setActivePoints] = useState<{ x: number, y: number }[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const dragStartRef = useRef<{ x: number, y: number, id: string } | null>(null);
+  const dragInfoRef = useRef<{ id: string, startX: number, startY: number, mouseX: number, mouseY: number } | null>(null);
+  const resizeInfoRef = useRef<{ id: string, ratio: number, startW: number, startH: number, mouseX: number, mouseY: number } | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [editingText, setEditingText] = useState<{ id?: string, x: number, y: number, value: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const resizeStartRef = useRef<{ width: number, height: number, ratio: number } | null>(null);
 
   const handleImageFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -261,35 +451,111 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     reader.readAsDataURL(file);
   };
 
-  const handleDragElement = (_: any, info: { offset: { x: number, y: number } }) => {
-    if (tool !== 'select' || isResizing || !dragStartRef.current) return;
-    const { x: sx, y: sy, id } = dragStartRef.current;
+  const handleElementPointerDown = (e: React.PointerEvent, elId: string) => {
+    e.stopPropagation();
+    const el = elements.find(item => item.id === elId);
+    if (!el) return;
+
+    if (tool === 'text' && el.type === 'text') {
+      setEditingText({ id: el.id, x: el.x, y: el.y, value: el.text || '' });
+      return;
+    }
+
+    if (tool !== 'select') return;
+
+    setSelectedElementId(elId);
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const { x, y } = getPos(e, cv);
     
-    const nextX = sx + info.offset.x;
-    const nextY = sy + info.offset.y;
+    dragInfoRef.current = {
+      id: elId,
+      startX: el.x || 0,
+      startY: el.y || 0,
+      mouseX: x,
+      mouseY: y
+    };
+    
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleElementPointerMove = (e: React.PointerEvent) => {
+    if (!dragInfoRef.current) return;
+    e.stopPropagation();
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const { x, y } = getPos(e, cv);
+    
+    const { id, startX, startY, mouseX, mouseY } = dragInfoRef.current;
+    const dx = x - mouseX;
+    const dy = y - mouseY;
     
     setElements(prev => prev.map(item => {
       if (item.id === id) {
-        return { ...item, x: nextX, y: nextY };
+        return { ...item, x: startX + dx, y: startY + dy };
       }
       return item;
     }));
   };
 
-  const handleResizeImage = (id: string, info: { offset: { x: number, y: number } }) => {
-    if (tool !== 'select' || !resizeStartRef.current) return;
-    const { width: sw, ratio } = resizeStartRef.current;
+  const handleElementPointerUp = (e: React.PointerEvent) => {
+    if (!dragInfoRef.current) return;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    dragInfoRef.current = null;
+  };
+
+  const handleResizePointerDown = (e: React.PointerEvent, elId: string) => {
+    if (tool !== 'select') return;
+    e.stopPropagation();
+    const el = elements.find(item => item.id === elId);
+    if (!el || el.type !== 'image') return;
+
+    setSelectedElementId(elId);
+    setIsResizing(true);
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const { x, y } = getPos(e, cv);
     
-    const deltaX = info.offset.x;
-    const newWidth = Math.max(40, sw + deltaX);
-    const newHeight = newWidth / ratio;
+    const currentW = el.width || 40;
+    const currentH = el.height || 40;
+    
+    resizeInfoRef.current = {
+      id: elId,
+      ratio: currentW / (currentH || 1),
+      startW: currentW,
+      startH: currentH,
+      mouseX: x,
+      mouseY: y
+    };
+    
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleResizePointerMove = (e: React.PointerEvent) => {
+    if (!resizeInfoRef.current) return;
+    e.stopPropagation();
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const { x, y } = getPos(e, cv);
+    
+    const { id, ratio, startW, mouseX } = resizeInfoRef.current;
+    const dx = x - mouseX;
     
     setElements(prev => prev.map(item => {
       if (item.id === id) {
+        const newWidth = Math.max(40, startW + dx);
+        const newHeight = newWidth / ratio;
         return { ...item, width: newWidth, height: newHeight };
       }
       return item;
     }));
+  };
+
+  const handleResizePointerUp = (e: React.PointerEvent) => {
+    if (!resizeInfoRef.current) return;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    resizeInfoRef.current = null;
+    setIsResizing(false);
   };
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
@@ -630,15 +896,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.lineJoin = 'round';
   };
 
-  const getPos = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent, cv: HTMLCanvasElement) => {
+  const getPos = (e: any, cv: HTMLCanvasElement) => {
     const rect = cv.getBoundingClientRect();
+    const ev = e.nativeEvent || e;
+    
     let clientX, clientY;
-    if ('touches' in e && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else if ('clientX' in e) {
-      clientX = e.clientX;
-      clientY = e.clientY;
+    if (ev.touches && ev.touches.length > 0) {
+      clientX = ev.touches[0].clientX;
+      clientY = ev.touches[0].clientY;
+    } else if (ev.clientX !== undefined) {
+      clientX = ev.clientX;
+      clientY = ev.clientY;
+    } else if (e.point) {
+      // Fallback for Framer Motion info object
+      clientX = e.point.x;
+      clientY = e.point.y;
     } else {
       return { x: 0, y: 0 };
     }
@@ -736,7 +1008,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
   };
 
-  const handleUp = (e: React.PointerEvent) => {
+  const handlePointerUp = (e: React.PointerEvent) => {
     if (!isDrawing) return;
     setIsDrawing(false);
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
@@ -1103,8 +1375,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         )}
         onPointerDown={handleDown}
         onPointerMove={handleMove}
-        onPointerUp={handleUp}
-        onPointerLeave={handleUp}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
       >
@@ -1168,7 +1440,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           id="svg-drawing-overlay"
           width="100%"
           height="100%"
-          className="absolute inset-0 z-30 pointer-events-none overflow-hidden w-full h-full touch-none"
+          className={cn(
+            "absolute inset-0 z-30 overflow-hidden w-full h-full touch-none",
+            tool === 'select' ? "pointer-events-auto" : "pointer-events-none"
+          )}
         >
           {/* Deselect Overlay - only clickable in select mode */}
           {tool === 'select' && (
@@ -1235,44 +1510,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           {elements.map((el) => {
             const isSelected = selectedElementId === el.id;
             
-            const elementProps = {
-              onPointerDown: (e: React.PointerEvent) => {
-                if (tool === 'select') {
-                  e.stopPropagation();
-                  setSelectedElementId(el.id);
-                } else if (tool === 'text' && el.type === 'text') {
-                  e.stopPropagation();
-                  setEditingText({ id: el.id, x: el.x, y: el.y, value: el.text || '' });
-                }
-              }
-            };
-
             // Logic to determine if element can catch events
-            const isSelectable = tool === 'select';
+            const isSelectable = tool === 'select' || (tool === 'text' && el.type === 'text');
             const interactiveStyle = {
               pointerEvents: isSelectable ? 'auto' : 'none' as any,
               cursor: isSelectable ? (isSelected ? 'grabbing' : 'grab') : 'none',
               filter: isSelected ? 'drop-shadow(0 0 4px var(--accent))' : 'none',
-              touchAction: 'none'
+              touchAction: 'none',
+              transition: 'filter 0.2s'
             };
 
             const dragProps = {
-              onPan: isSelectable && !isResizing ? handleDragElement : undefined,
-              onPanStart: () => {
-                if (isSelectable) {
-                  setSelectedElementId(el.id);
-                  dragStartRef.current = { x: el.x, y: el.y, id: el.id };
-                }
-              },
-              onPanEnd: () => {
-                dragStartRef.current = null;
-              },
-              onTap: () => {
-                if (isSelectable) {
-                  setSelectedElementId(el.id);
-                }
-              },
-              ...elementProps,
+              onPointerDown: (e: React.PointerEvent) => handleElementPointerDown(e, el.id),
+              onPointerMove: handleElementPointerMove,
+              onPointerUp: handleElementPointerUp,
+              onPointerCancel: handleElementPointerUp,
               style: interactiveStyle,
               className: isSelectable ? "pointer-events-auto" : ""
             };
@@ -1568,28 +1820,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                     </g>
                   )}
                   {isSelected && (
-                    <motion.circle
+                    <circle
                       cx={rectX + rectW}
                       cy={rectY + rectH}
                       r={18}
                       fill="transparent"
                       className="cursor-nwse-resize pointer-events-auto"
-                      onPanStart={() => {
-                        setIsResizing(true);
-                        const currentW = el.width || 0;
-                        const currentH = el.height || 0;
-                        resizeStartRef.current = { 
-                          width: currentW, 
-                          height: currentH, 
-                          ratio: currentW / (currentH || 1) 
-                        };
-                      }}
-                      onPan={(e: any, info: any) => handleResizeImage(el.id, info)}
-                      onPanEnd={() => {
-                        resizeStartRef.current = null;
-                        setIsResizing(false);
-                      }}
-                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => handleResizePointerDown(e, el.id)}
+                      onPointerMove={handleResizePointerMove}
+                      onPointerUp={handleResizePointerUp}
+                      onPointerCancel={handleResizePointerUp}
                     />
                   )}
                 </g>

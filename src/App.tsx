@@ -570,12 +570,47 @@ export default function App() {
 
   // Helper to update whiteboard both locally and in class state
   const setWhiteboardState = (updater: WhiteboardState | ((prev: WhiteboardState) => WhiteboardState)) => {
-    _setWhiteboardState(updater);
+    const isStateSame = (a: WhiteboardState, b: WhiteboardState) => {
+      const isArrSame = (arrA: any[], arrB: any[]) => {
+        if (arrA === arrB) return true;
+        if (!arrA || !arrB) return false;
+        if (arrA.length !== arrB.length) return false;
+        return JSON.stringify(arrA) === JSON.stringify(arrB);
+      };
+
+      return a.tool === b.tool && 
+             a.color === b.color && 
+             a.size === b.size && 
+             a.bgDark === b.bgDark &&
+             a.showGrid === b.showGrid &&
+             a.gridScale === b.gridScale &&
+             a.showGridLabels === b.showGridLabels &&
+             a.showGrapher === b.showGrapher &&
+             a.showEqPanel === b.showEqPanel &&
+             a.showMathTools === b.showMathTools &&
+             a.data === b.data &&
+             isArrSame(a.elements, b.elements) &&
+             isArrSame(a.undoStack, b.undoStack) &&
+             isArrSame(a.redoStack, b.redoStack) &&
+             isArrSame(a.activeGeoTools, b.activeGeoTools) &&
+             isArrSame(a.functions, b.functions);
+    };
+
+    _setWhiteboardState(prev => {
+      const newState = typeof updater === 'function' ? updater(prev) : updater;
+      if (isStateSame(prev, newState)) return prev;
+      return newState;
+    });
+
     if (activeClassId) {
       setClasses(prev => {
         const currentClass = prev[activeClassId];
         if (!currentClass) return prev;
-        const newState = typeof updater === 'function' ? updater(currentClass.whiteboardState || DEFAULT_WHITEBOARD_STATE) : updater;
+        const currentWS = currentClass.whiteboardState || DEFAULT_WHITEBOARD_STATE;
+        const newState = typeof updater === 'function' ? updater(currentWS) : updater;
+        
+        if (isStateSame(currentWS, newState)) return prev;
+        
         return {
           ...prev,
           [activeClassId]: { ...currentClass, whiteboardState: newState }
@@ -1279,12 +1314,14 @@ export default function App() {
               onFocus={() => bringToFront('w-whiteboard')}
               dragConstraints={canvasRef}
             >
-              <Whiteboard 
-                ref={whiteboardRef} 
-                onToggleMaximize={() => setIsWhiteboardMaximized(true)} 
-                sharedState={whiteboardState}
-                onSharedStateChange={(updates) => setWhiteboardState(prev => ({ ...prev, ...updates }))}
-              />
+              {!isWhiteboardMaximized && (
+                <Whiteboard 
+                  ref={whiteboardRef} 
+                  onToggleMaximize={() => setIsWhiteboardMaximized(true)} 
+                  sharedState={whiteboardState}
+                  onSharedStateChange={(updates) => setWhiteboardState(prev => ({ ...prev, ...updates }))}
+                />
+              )}
             </Widget>
           )}
         </AnimatePresence>
