@@ -34,6 +34,7 @@ export interface WidgetLayout {
   w: number;
   h: number;
   hidden: boolean;
+  minimized?: boolean;
 }
 
 export type WhiteboardSize = 'sm' | 'md' | 'lg' | 'xl';

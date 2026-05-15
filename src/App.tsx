@@ -485,14 +485,14 @@ const STORAGE_KEY = 'classroom_dashboard_v3';
 const LAYOUT_KEY = 'classroom_custom_layout_v1';
 
 const DEFAULT_WIDGETS = {
-  'w-clock': { x: 40, y: 40, w: 300, h: 180, hidden: false },
-  'w-timer': { x: 360, y: 40, w: 300, h: 180, hidden: false },
-  'w-traffic': { x: 680, y: 40, w: 300, h: 180, hidden: false },
-  'w-work': { x: 1000, y: 40, w: 300, h: 180, hidden: false },
-  'w-agenda': { x: 40, y: 240, w: 400, h: 520, hidden: false },
-  'w-whiteboard': { x: 460, y: 240, w: 840, h: 520, hidden: false },
-  'w-instr': { x: 40, y: 780, w: 1260, h: 180, hidden: false },
-  'w-bg': { x: 1320, y: 240, w: 300, h: 180, hidden: true },
+  'w-clock': { x: 20, y: 20, w: 360, h: 290, hidden: false },
+  'w-timer': { x: 400, y: 20, w: 360, h: 330, hidden: false },
+  'w-traffic': { x: 20, y: 330, w: 360, h: 290, hidden: false },
+  'w-work': { x: 400, y: 370, w: 360, h: 250, hidden: false },
+  'w-agenda': { x: 780, y: 300, w: 420, h: 610, hidden: false },
+  'w-whiteboard': { x: 1220, y: 20, w: 680, h: 890, hidden: false },
+  'w-instr': { x: 780, y: 20, w: 420, h: 260, hidden: false },
+  'w-bg': { x: 20, y: 740, w: 740, h: 250, hidden: false },
 };
 
 const PRESET_BGS = [
@@ -1151,8 +1151,21 @@ export default function App() {
               isTop={topWidgetId === 'w-timer'}
               onFocus={() => bringToFront('w-timer')}
               dragConstraints={canvasRef}
+              bodyClassName={widgetLayouts['w-timer'].minimized ? "p-2 overflow-hidden" : "p-4 overflow-auto custom-scrollbar"}
             >
-              <Timer />
+              <Timer 
+                isMinimized={widgetLayouts['w-timer'].minimized}
+                onSizeChange={(minimized) => {
+                  setWidgetLayouts(prev => ({
+                    ...prev,
+                    'w-timer': { 
+                      ...prev['w-timer'], 
+                      h: minimized ? 110 : 300,
+                      minimized 
+                    }
+                  }));
+                }} 
+              />
             </Widget>
           )}
 

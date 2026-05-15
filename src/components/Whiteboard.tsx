@@ -406,6 +406,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [editingText, setEditingText] = useState<{ id?: string, x: number, y: number, value: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const handleImageFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -453,6 +454,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   const handleElementPointerDown = (e: React.PointerEvent, elId: string) => {
     e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+
     const el = elements.find(item => item.id === elId);
     if (!el) return;
 
@@ -476,7 +479,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       mouseY: y
     };
     
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    canvasContainerRef.current?.setPointerCapture(e.pointerId);
   };
 
   const handleElementPointerMove = (e: React.PointerEvent) => {
@@ -500,13 +503,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   const handleElementPointerUp = (e: React.PointerEvent) => {
     if (!dragInfoRef.current) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    canvasContainerRef.current?.releasePointerCapture(e.pointerId);
     dragInfoRef.current = null;
   };
 
   const handleResizePointerDown = (e: React.PointerEvent, elId: string) => {
     if (tool !== 'select') return;
     e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+
     const el = elements.find(item => item.id === elId);
     if (!el || el.type !== 'image') return;
 
@@ -528,7 +533,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       mouseY: y
     };
     
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    canvasContainerRef.current?.setPointerCapture(e.pointerId);
   };
 
   const handleResizePointerMove = (e: React.PointerEvent) => {
@@ -553,7 +558,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   const handleResizePointerUp = (e: React.PointerEvent) => {
     if (!resizeInfoRef.current) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    canvasContainerRef.current?.releasePointerCapture(e.pointerId);
     resizeInfoRef.current = null;
     setIsResizing(false);
   };
@@ -1369,14 +1374,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
       {/* Canvas Area */}
       <div 
+        ref={canvasContainerRef}
         className={cn(
           "relative flex-1 min-h-0 transition-colors duration-300",
           bgDark ? "bg-[#1a1f2e]" : "bg-[#f5f5f0]"
         )}
         onPointerDown={handleDown}
-        onPointerMove={handleMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerMove={(e) => {
+          if (dragInfoRef.current) handleElementPointerMove(e);
+          else if (resizeInfoRef.current) handleResizePointerMove(e);
+          else handleMove(e);
+        }}
+        onPointerUp={(e) => {
+          if (dragInfoRef.current) handleElementPointerUp(e);
+          else if (resizeInfoRef.current) handleResizePointerUp(e);
+          else handlePointerUp(e);
+        }}
+        onPointerLeave={(e) => {
+          if (dragInfoRef.current) handleElementPointerUp(e);
+          else if (resizeInfoRef.current) handleResizePointerUp(e);
+          else handlePointerUp(e);
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
       >
@@ -1522,9 +1540,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
             const dragProps = {
               onPointerDown: (e: React.PointerEvent) => handleElementPointerDown(e, el.id),
-              onPointerMove: handleElementPointerMove,
-              onPointerUp: handleElementPointerUp,
-              onPointerCancel: handleElementPointerUp,
               style: interactiveStyle,
               className: isSelectable ? "pointer-events-auto" : ""
             };
@@ -1827,9 +1842,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                       fill="transparent"
                       className="cursor-nwse-resize pointer-events-auto"
                       onPointerDown={(e) => handleResizePointerDown(e, el.id)}
-                      onPointerMove={handleResizePointerMove}
-                      onPointerUp={handleResizePointerUp}
-                      onPointerCancel={handleResizePointerUp}
                     />
                   )}
                 </g>
