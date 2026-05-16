@@ -485,14 +485,14 @@ const STORAGE_KEY = 'classroom_dashboard_v3';
 const LAYOUT_KEY = 'classroom_custom_layout_v1';
 
 const DEFAULT_WIDGETS = {
-  'w-clock': { x: 20, y: 20, w: 360, h: 290, hidden: false },
-  'w-timer': { x: 400, y: 20, w: 360, h: 330, hidden: false },
-  'w-traffic': { x: 20, y: 330, w: 360, h: 290, hidden: false },
-  'w-work': { x: 400, y: 370, w: 360, h: 250, hidden: false },
-  'w-agenda': { x: 780, y: 300, w: 420, h: 610, hidden: false },
-  'w-whiteboard': { x: 1220, y: 20, w: 680, h: 890, hidden: false },
-  'w-instr': { x: 780, y: 20, w: 420, h: 260, hidden: false },
-  'w-bg': { x: 20, y: 740, w: 740, h: 250, hidden: false },
+  'w-clock': { x: 20, y: 20, w: 320, h: 260, hidden: false },
+  'w-timer': { x: 360, y: 20, w: 320, h: 320, hidden: false },
+  'w-traffic': { x: 20, y: 300, w: 320, h: 270, hidden: false },
+  'w-work': { x: 360, y: 360, w: 320, h: 230, hidden: false },
+  'w-agenda': { x: 700, y: 280, w: 380, h: 580, hidden: false },
+  'w-whiteboard': { x: 1100, y: 20, w: 580, h: 850, hidden: false },
+  'w-instr': { x: 700, y: 20, w: 380, h: 250, hidden: false },
+  'w-bg': { x: 20, y: 600, w: 660, h: 240, hidden: false },
 };
 
 const PRESET_BGS = [
@@ -622,6 +622,89 @@ export default function App() {
   const whiteboardRef = useRef<WhiteboardHandle>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
+  const sanitizeLayout = (layouts: Record<string, WidgetLayout>) => {
+    const canvasWidth = canvasRef.current?.offsetWidth || window.innerWidth;
+    const canvasHeight = canvasRef.current?.offsetHeight || window.innerHeight;
+    const sanitized = JSON.parse(JSON.stringify(layouts));
+    let changed = false;
+
+    // Safety margins
+    const MARGIN = 10;
+    const HEADER_BUFFER = 20;
+
+    Object.keys(sanitized).forEach(key => {
+      const widget = sanitized[key];
+      const defaultWidget = DEFAULT_WIDGETS[key as keyof typeof DEFAULT_WIDGETS];
+      
+      // 1. Constrain size first
+      const maxW = canvasWidth - (MARGIN * 2);
+      const maxH = canvasHeight - (MARGIN * 2);
+      
+      if (widget.w > maxW) {
+        widget.w = maxW;
+        changed = true;
+      }
+      if (widget.h > maxH) {
+        widget.h = maxH;
+        changed = true;
+      }
+
+      // 2. Ensure top/left are within bounds
+      if (widget.x < MARGIN) {
+        widget.x = MARGIN;
+        changed = true;
+      }
+      if (widget.y < MARGIN) {
+        widget.y = MARGIN;
+        changed = true;
+      }
+
+      // 3. Ensure they aren't pushed too far right/down
+      if (widget.x > canvasWidth - 50) {
+        widget.x = Math.max(MARGIN, canvasWidth - widget.w - MARGIN);
+        changed = true;
+      }
+      if (widget.y > canvasHeight - HEADER_BUFFER) {
+        widget.y = Math.max(MARGIN, canvasHeight - widget.h - MARGIN);
+        changed = true;
+      }
+
+      // 4. Final containment check: push inside if edges are still off
+      if (widget.x + widget.w > canvasWidth) {
+        // Prefer resizing over moving if it's already at MARGIN
+        if (widget.x === MARGIN) {
+          widget.w = canvasWidth - (MARGIN * 2);
+        } else {
+          widget.x = Math.max(MARGIN, canvasWidth - widget.w - MARGIN);
+        }
+        changed = true;
+      }
+      if (widget.y + widget.h > canvasHeight) {
+        if (widget.y === MARGIN) {
+          widget.h = canvasHeight - (MARGIN * 2);
+        } else {
+          widget.y = Math.max(MARGIN, canvasHeight - widget.h - MARGIN);
+        }
+        changed = true;
+      }
+    });
+
+    return { sanitized, changed };
+  };
+
+  // Handle window resizing to keep widgets in view
+  useEffect(() => {
+    const handleResize = () => {
+      _setWidgetLayouts(prev => {
+        const { sanitized, changed } = sanitizeLayout(prev);
+        return changed ? sanitized : prev;
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Load initial data
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -630,19 +713,26 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (parsed.classes) {
           setClasses(parsed.classes);
-          if (parsed.activeClassId && parsed.classes[parsed.activeClassId]) {
-            const active = parsed.classes[parsed.activeClassId];
-            setActiveClassId(parsed.activeClassId);
-            _setWidgetLayouts(active.widgetLayouts || DEFAULT_WIDGETS);
+          const targetId = (parsed.activeClassId && parsed.classes[parsed.activeClassId]) 
+            ? parsed.activeClassId 
+            : Object.keys(parsed.classes)[0];
+          
+          if (targetId) {
+            const active = parsed.classes[targetId];
+            setActiveClassId(targetId);
             _setWhiteboardState(active.whiteboardState || DEFAULT_WHITEBOARD_STATE);
-          } else {
-            const firstId = Object.keys(parsed.classes)[0];
-            if (firstId) {
-              const active = parsed.classes[firstId];
-              setActiveClassId(firstId);
-              _setWidgetLayouts(active.widgetLayouts || DEFAULT_WIDGETS);
-              _setWhiteboardState(active.whiteboardState || DEFAULT_WHITEBOARD_STATE);
-            }
+            
+            // Apply sanitization after a small delay to ensure canvasRef is ready
+            setTimeout(() => {
+              const { sanitized, changed } = sanitizeLayout(active.widgetLayouts || DEFAULT_WIDGETS);
+              _setWidgetLayouts(sanitized);
+              if (changed) {
+                setClasses(prev => ({
+                  ...prev,
+                  [targetId]: { ...prev[targetId], widgetLayouts: sanitized }
+                }));
+              }
+            }, 100);
           }
         }
         
@@ -928,8 +1018,21 @@ export default function App() {
 
   const handleClassSwitch = (id: string) => {
     setActiveClassId(id);
-    _setWidgetLayouts(classes[id].widgetLayouts || DEFAULT_WIDGETS);
-    _setWhiteboardState(classes[id].whiteboardState || DEFAULT_WHITEBOARD_STATE);
+    const classData = classes[id];
+    if (!classData) return;
+
+    const layouts = classData.widgetLayouts || DEFAULT_WIDGETS;
+    const { sanitized, changed } = sanitizeLayout(layouts);
+
+    _setWidgetLayouts(sanitized);
+    _setWhiteboardState(classData.whiteboardState || DEFAULT_WHITEBOARD_STATE);
+    
+    if (changed) {
+      setClasses(prev => ({
+        ...prev,
+        [id]: { ...prev[id], widgetLayouts: sanitized }
+      }));
+    }
   };
 
   const getHomeLayout = () => {
